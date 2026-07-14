@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Price Sniffer — 管理台 Demo</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-name">Price Sniffer</div>
+        <div class="brand-tag">本地管理台 Demo</div>
+      </div>
+      <nav class="nav" id="nav">
+        <a href="#/overview" class="nav-item" data-route="overview">概览</a>
+
+        <button type="button" class="nav-group" data-group="config" aria-expanded="true">
+          <span>配置管理</span>
+          <span class="chevron">▾</span>
+        </button>
+        <div class="nav-children" data-children="config">
+          <a href="#/products" class="nav-item" data-route="products">产品配置</a>
+          <a href="#/platforms" class="nav-item" data-route="platforms">平台管理</a>
+          <a href="#/markets" class="nav-item" data-route="markets">市场管理</a>
+        </div>
+
+        <button type="button" class="nav-group" data-group="alerts" aria-expanded="true">
+          <span>告警</span>
+          <span class="chevron">▾</span>
+        </button>
+        <div class="nav-children" data-children="alerts">
+          <a href="#/alert-panel" class="nav-item" data-route="alert-panel">告警面板</a>
+          <a href="#/alerts" class="nav-item" data-route="alerts">告警规则</a>
+        </div>
+
+        <button type="button" class="nav-group" data-group="tasks" aria-expanded="true">
+          <span>抓取任务</span>
+          <span class="chevron">▾</span>
+        </button>
+        <div class="nav-children" data-children="tasks">
+          <a href="#/tasks" class="nav-item" data-route="tasks">任务列表</a>
+          <a href="#/task-status" class="nav-item" data-route="task-status">任务状态</a>
+        </div>
+
+        <button type="button" class="nav-group" data-group="charts" aria-expanded="true">
+          <span>数据看板</span>
+          <span class="chevron">▾</span>
+        </button>
+        <div class="nav-children" data-children="charts">
+          <a href="#/price-trend" class="nav-item" data-route="price-trend">价格趋势</a>
+          <a href="#/category-trend" class="nav-item" data-route="category-trend">分类聚合趋势</a>
+          <a href="#/detail-data" class="nav-item" data-route="detail-data">详细数据</a>
+        </div>
+      </nav>
+      <div class="sidebar-foot">
+        <button type="button" class="btn btn-ghost btn-block" id="btn-reset-data">重置演示数据</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button type="button" class="btn btn-ghost" id="btn-toggle-sidebar" aria-label="折叠侧栏">☰</button>
+        <h1 id="page-title">概览</h1>
+        <div class="topbar-meta">SQLite 元配置 · TDengine 时序（Demo 本地模拟）</div>
+      </header>
+      <main class="content" id="content"></main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2 id="modal-title">编辑</h2>
+        <button type="button" class="btn btn-ghost" id="modal-close" aria-label="关闭">×</button>
+      </div>
+      <form id="modal-form" class="modal-body"></form>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button type="submit" form="modal-form" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

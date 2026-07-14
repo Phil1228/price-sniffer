@@ -13,6 +13,7 @@
     "task-status": "任务状态",
     "price-trend": "价格趋势",
     "category-trend": "分类聚合趋势",
+    "category-summary": "分类销量价格汇总",
     "detail-data": "详细数据",
   };
 
@@ -68,7 +69,7 @@
       failed: "失败",
       running: "运行中",
       pending: "待运行",
-      firing: "触发中",
+      firing: "告警中",
       acknowledged: "已确认",
       resolved: "已恢复",
       silenced: "静默中",
@@ -168,7 +169,7 @@
         <div class="stat"><div class="label">运行中</div><div class="value">${running}</div></div>
         <div class="stat"><div class="label">成功 / 失败</div><div class="value">${ok} / ${failed}</div></div>
         <div class="stat"><div class="label">启用告警规则</div><div class="value">${rulesOn}</div></div>
-        <div class="stat"><div class="label">触发中告警</div><div class="value">${firing}</div></div>
+        <div class="stat"><div class="label">告警中</div><div class="value">${firing}</div></div>
       </div>
       <div class="panel">
         <div class="panel-header"><h2>说明</h2></div>
@@ -202,6 +203,7 @@
       <tr>
         <td><code>${esc(p.id)}</code></td>
         <td>${esc(p.name)}</td>
+        <td>${esc(p.category || "其他")}</td>
         <td>${esc(p.keyword)}</td>
         <td>${enabledBadge(p.enabled)}</td>
         <td class="muted">${esc(p.notes || "—")}</td>
@@ -223,20 +225,22 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>ID</th><th>名称</th><th>关键字</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
-            <tbody>${rows || `<tr><td colspan="6" class="empty">暂无产品</td></tr>`}</tbody>
+            <thead><tr><th>ID</th><th>名称</th><th>分类</th><th>关键字</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="7" class="empty">暂无产品</td></tr>`}</tbody>
           </table>
         </div>
       </div>`;
   }
 
   function productModal(existing) {
-    const p = existing || { id: "", name: "", keyword: "", enabled: true, notes: "" };
+    const p = existing || { id: "", name: "", keyword: "", category: "其他", enabled: true, notes: "" };
+    const catOpts = (Store.CATEGORY_OPTIONS || ["其他"]).map((c) => [c, c]);
     openModal(
       existing ? "编辑产品" : "新增产品",
       `
       ${field("ID", "id", p.id, "text", { required: true })}
       ${field("名称", "name", p.name, "text", { required: true })}
+      ${field("产品分类", "category", p.category || "其他", "select", { options: catOpts, required: true })}
       ${field("搜索关键字", "keyword", p.keyword, "text", { required: true })}
       ${field("启用", "enabled", p.enabled, "checkbox")}
       ${field("备注", "notes", p.notes, "textarea")}
@@ -246,6 +250,7 @@
         const row = {
           id: String(data.id).trim(),
           name: String(data.name).trim(),
+          category: String(data.category || "其他").trim(),
           keyword: String(data.keyword).trim(),
           enabled: !!data.enabled,
           notes: String(data.notes || "").trim(),
@@ -562,7 +567,7 @@
 
     return `
       <div class="stats">
-        <div class="stat"><div class="label">触发中</div><div class="value">${counts.firing || 0}</div></div>
+        <div class="stat"><div class="label">告警中</div><div class="value">${counts.firing || 0}</div></div>
         <div class="stat"><div class="label">已确认</div><div class="value">${counts.acknowledged || 0}</div></div>
         <div class="stat"><div class="label">已恢复</div><div class="value">${counts.resolved || 0}</div></div>
         <div class="stat"><div class="label">静默中</div><div class="value">${counts.silenced || 0}</div></div>
@@ -575,13 +580,13 @@
             <a class="btn btn-secondary" href="#/alerts">管理规则</a>
           </div>
         </div>
-        <p class="muted" style="margin-top:0">状态机：触发中 → 已确认 / 静默中 → 已恢复（对应产品文档 alert_events）。</p>
+        <p class="muted" style="margin-top:0">状态：告警中 → 已确认 / 静默中 → 已恢复（对应产品文档 alert_events）。</p>
         <div class="toolbar">
           <div class="field">
             <label>状态</label>
             <select id="filter-alert-status">
               <option value="">全部</option>
-              <option value="firing" ${statusFilter === "firing" ? "selected" : ""}>触发中</option>
+              <option value="firing" ${statusFilter === "firing" ? "selected" : ""}>告警中</option>
               <option value="acknowledged" ${statusFilter === "acknowledged" ? "selected" : ""}>已确认</option>
               <option value="resolved" ${statusFilter === "resolved" ? "selected" : ""}>已恢复</option>
               <option value="silenced" ${statusFilter === "silenced" ? "selected" : ""}>静默中</option>
@@ -1013,6 +1018,7 @@
       platform: sessionStorage.getItem("demo-detail-platform") || "",
       market: sessionStorage.getItem("demo-detail-market") || "",
       shop: sessionStorage.getItem("demo-detail-shop") || "",
+      alert: sessionStorage.getItem("demo-detail-alert") || "",
       relative,
       from: sessionStorage.getItem("demo-detail-from") || defaults.from,
       to: sessionStorage.getItem("demo-detail-to") || defaults.to,
@@ -1066,8 +1072,223 @@
       if (f.platform && s.platform_id !== f.platform) return false;
       if (f.market && s.market_id !== f.market) return false;
       if (f.shop && s.shop_id !== f.shop) return false;
+      if (f.alert) {
+        const info = seriesAlertInfo(s);
+        if (f.alert === "firing" && !info.firing.length) return false;
+        if (f.alert === "ruled" && (!info.rules.length || info.firing.length)) return false;
+        if (f.alert === "none" && (info.rules.length || info.firing.length)) return false;
+      }
       return true;
     });
+  }
+
+  function seriesAlertInfo(s) {
+    const d = Store.get();
+    const rules = (d.alertRules || []).filter((r) => {
+      if (!r.enabled) return false;
+      if (r.product_id && r.product_id !== s.product_id) return false;
+      if (r.platform_id && r.platform_id !== s.platform_id) return false;
+      if (r.market_id && r.market_id !== s.market_id) return false;
+      if (r.shop_id && r.shop_id !== s.shop_id) return false;
+      return true;
+    });
+    const firing = (d.alertEvents || []).filter((e) => {
+      if (e.status !== "firing") return false;
+      if (e.product_id && e.product_id !== s.product_id) return false;
+      if (e.platform_id && e.platform_id !== s.platform_id) return false;
+      if (e.market_id && e.market_id !== s.market_id) return false;
+      return true;
+    });
+    return { rules, firing };
+  }
+
+  function alertBadgeHtml(info) {
+    if (!info.rules.length && !info.firing.length) {
+      return `<span class="badge badge-off">无关联</span>`;
+    }
+    if (info.firing.length) {
+      return `<span class="badge badge-alert-firing" title="${esc(info.firing.map((e) => e.rule_name).join("；"))}">告警中 ${info.firing.length}</span>`;
+    }
+    return `<span class="badge badge-alert-rule" title="${esc(info.rules.map((r) => r.name).join("；"))}">规则 ${info.rules.length}</span>`;
+  }
+
+  function getSummaryFilters() {
+    let relative = sessionStorage.getItem("demo-summary-relative");
+    if (relative == null) {
+      const range = rangeFromRelative("30d");
+      sessionStorage.setItem("demo-summary-relative", "30d");
+      sessionStorage.setItem("demo-summary-from", range.from);
+      sessionStorage.setItem("demo-summary-to", range.to);
+      relative = "30d";
+    }
+    const defaults = rangeFromRelative(relative === "-" ? "30d" : relative);
+    return {
+      platform: sessionStorage.getItem("demo-summary-platform") || "",
+      category: sessionStorage.getItem("demo-summary-category") || "",
+      relative,
+      from: sessionStorage.getItem("demo-summary-from") || defaults.from,
+      to: sessionStorage.getItem("demo-summary-to") || defaults.to,
+    };
+  }
+
+  function viewCategorySummary() {
+    const d = Store.get();
+    const f = getSummaryFilters();
+    const productById = Object.fromEntries(d.products.map((p) => [p.id, p]));
+    const categories = [...new Set(d.products.map((p) => p.category || "其他"))].sort();
+
+    const matchedSeries = d.series.filter((s) => {
+      if (f.platform && s.platform_id !== f.platform) return false;
+      const cat = productById[s.product_id]?.category || "其他";
+      if (f.category && cat !== f.category) return false;
+      return true;
+    });
+
+    const byCategory = new Map();
+    for (const s of matchedSeries) {
+      const cat = productById[s.product_id]?.category || "其他";
+      if (!byCategory.has(cat)) {
+        byCategory.set(cat, {
+          category: cat,
+          products: new Set(),
+          shops: new Set(),
+          priceSum: 0,
+          priceN: 0,
+          sold: 0,
+          revenue: 0,
+        });
+      }
+      const bucket = byCategory.get(cat);
+      bucket.products.add(s.product_id);
+      bucket.shops.add(s.shop_id);
+      const pts = filterPointsByRange(s.points, f.from, f.to);
+      for (const p of pts) {
+        bucket.priceSum += p.price;
+        bucket.priceN += 1;
+        bucket.sold += p.sold;
+        bucket.revenue += p.revenue;
+      }
+    }
+
+    const rows = [...byCategory.values()]
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((b) => {
+        const avg = b.priceN ? Math.round((b.priceSum / b.priceN) * 100) / 100 : "—";
+        const rev = Math.round(b.revenue * 100) / 100;
+        return `
+        <tr>
+          <td><strong>${esc(b.category)}</strong></td>
+          <td>${b.products.size}</td>
+          <td>${b.shops.size}</td>
+          <td>${esc(avg)}</td>
+          <td>${esc(b.sold)}</td>
+          <td>${esc(rev)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const productRows = matchedSeries
+      .reduce((acc, s) => {
+        const key = `${s.product_id}__${Store.productCategory(s.product_id)}`;
+        if (!acc.has(key)) {
+          acc.set(key, {
+            product_id: s.product_id,
+            category: Store.productCategory(s.product_id),
+            priceSum: 0,
+            priceN: 0,
+            sold: 0,
+            revenue: 0,
+            shops: new Set(),
+          });
+        }
+        const b = acc.get(key);
+        b.shops.add(s.shop_id);
+        for (const p of filterPointsByRange(s.points, f.from, f.to)) {
+          b.priceSum += p.price;
+          b.priceN += 1;
+          b.sold += p.sold;
+          b.revenue += p.revenue;
+        }
+        return acc;
+      }, new Map());
+
+    const productTable = [...productRows.values()]
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((b) => {
+        const avg = b.priceN ? Math.round((b.priceSum / b.priceN) * 100) / 100 : "—";
+        return `
+        <tr>
+          <td>${esc(b.category)}</td>
+          <td>${esc(Store.productName(b.product_id))}</td>
+          <td>${b.shops.size}</td>
+          <td>${esc(avg)}</td>
+          <td>${esc(b.sold)}</td>
+          <td>${esc(Math.round(b.revenue * 100) / 100)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    return `
+      <div class="panel">
+        <div class="panel-header"><h2>产品分类 · 销量 / 价格汇总</h2></div>
+        <p class="muted" style="margin-top:0">按产品分类聚合所选时间范围内的均价、销量合计与销售额合计。</p>
+        <div class="toolbar">
+          <div class="field">
+            <label>分类</label>
+            <select id="filter-summary-category">
+              <option value="">全部分类</option>
+              ${categories.map((c) => `<option value="${esc(c)}" ${f.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>平台</label>
+            <select id="filter-summary-platform">
+              <option value="">全部平台</option>
+              ${d.platforms.map((p) => `<option value="${esc(p.id)}" ${f.platform === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>相对时间</label>
+            <select id="filter-summary-relative">
+              <option value="-" ${f.relative === "-" ? "selected" : ""}>-</option>
+              <option value="7d" ${f.relative === "7d" ? "selected" : ""}>近一周</option>
+              <option value="30d" ${f.relative === "30d" ? "selected" : ""}>近一个月</option>
+              <option value="90d" ${f.relative === "90d" ? "selected" : ""}>近三个月</option>
+              <option value="180d" ${f.relative === "180d" ? "selected" : ""}>近半年</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>开始日期</label>
+            <input type="date" id="filter-summary-from" value="${esc(f.from)}" />
+          </div>
+          <div class="field">
+            <label>结束日期</label>
+            <input type="date" id="filter-summary-to" value="${esc(f.to)}" />
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>按分类汇总</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>分类</th><th>产品数</th><th>店铺数</th><th>均价</th><th>销量合计</th><th>销售额合计</th></tr>
+            </thead>
+            <tbody>${rows || `<tr><td colspan="6" class="empty">无数据</td></tr>`}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>分类下产品明细</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>分类</th><th>产品</th><th>店铺数</th><th>均价</th><th>销量合计</th><th>销售额合计</th></tr>
+            </thead>
+            <tbody>${productTable || `<tr><td colspan="6" class="empty">无数据</td></tr>`}</tbody>
+          </table>
+        </div>
+      </div>`;
   }
 
   function viewDetailData() {
@@ -1089,10 +1310,13 @@
         const pts = filterPointsByRange(s.points, f.from, f.to);
         const sum = summarizePoints(pts);
         const open = expanded.has(s.id);
+        const alertInfo = seriesAlertInfo(s);
         return `
-        <tr class="series-row ${open ? "is-open" : ""}" data-act="toggle-series" data-id="${esc(s.id)}">
+        <tr class="series-row ${open ? "is-open" : ""} ${alertInfo.firing.length ? "has-alert" : ""}" data-act="toggle-series" data-id="${esc(s.id)}">
           <td class="expand-cell">${open ? "▾" : "▸"}</td>
+          <td>${alertBadgeHtml(alertInfo)}</td>
           <td>${esc(Store.productName(s.product_id))}</td>
+          <td class="muted">${esc(Store.productCategory(s.product_id))}</td>
           <td>${esc(Store.platformName(s.platform_id))}</td>
           <td>${esc(Store.marketName(s.market_id))}</td>
           <td>${esc(s.shop_name || s.shop_id)}</td>
@@ -1105,12 +1329,22 @@
         ${
           open
             ? `<tr class="series-expand">
-          <td colspan="10">
+          <td colspan="12">
             <div class="expand-panel">
               <div class="expand-meta muted">
                 Serie：<code>${esc(s.id)}</code>
                 · 区间 ${esc(f.from)} ~ ${esc(f.to)}
                 · <a href="${esc(s.listing_url || "#")}" target="_blank" rel="noopener">店铺链接</a>
+                ${
+                  alertInfo.rules.length
+                    ? ` · 关联规则：${alertInfo.rules.map((r) => `<a href="#/alerts">${esc(r.name)}</a>`).join("、")}`
+                    : ""
+                }
+                ${
+                  alertInfo.firing.length
+                    ? ` · <a href="#/alert-panel">告警中 ${alertInfo.firing.length} 条</a>`
+                    : ""
+                }
               </div>
               <div class="chart-box chart-box-detail"><canvas id="chart-detail-${esc(s.id)}"></canvas></div>
               <div class="table-wrap" style="margin-top:0.75rem">
@@ -1141,7 +1375,7 @@
     return `
       <div class="panel">
         <div class="panel-header"><h2>详细数据（产品 / 平台 / 市场 / 店铺）</h2></div>
-        <p class="muted" style="margin-top:0">点击某一 serie 行展开，查看选定时间范围内的价格、销量、销售额趋势。相对时间默认近一个月；手动改绝对日期后相对选项变为「-」。</p>
+        <p class="muted" style="margin-top:0">点击某一 serie 行展开。告警列：<strong>告警中</strong>（有 firing 事件）/ <strong>规则</strong>（仅关联启用规则）/ <strong>无关联</strong>。</p>
         <div class="toolbar">
           <div class="field">
             <label>产品</label>
@@ -1172,6 +1406,15 @@
             </select>
           </div>
           <div class="field">
+            <label>告警状态</label>
+            <select id="filter-detail-alert">
+              <option value="" ${!f.alert ? "selected" : ""}>全部</option>
+              <option value="firing" ${f.alert === "firing" ? "selected" : ""}>告警中</option>
+              <option value="ruled" ${f.alert === "ruled" ? "selected" : ""}>仅有规则</option>
+              <option value="none" ${f.alert === "none" ? "selected" : ""}>无关联</option>
+            </select>
+          </div>
+          <div class="field">
             <label>相对时间</label>
             <select id="filter-detail-relative">
               <option value="-" ${f.relative === "-" ? "selected" : ""}>-</option>
@@ -1195,11 +1438,11 @@
           <table class="series-table">
             <thead>
               <tr>
-                <th></th><th>产品</th><th>平台</th><th>市场</th><th>店铺</th>
+                <th></th><th>告警</th><th>产品</th><th>分类</th><th>平台</th><th>市场</th><th>店铺</th>
                 <th>最新价</th><th>均价</th><th>销量合计</th><th>销售额合计</th><th>天数</th>
               </tr>
             </thead>
-            <tbody>${rows || `<tr><td colspan="10" class="empty">无匹配数据，请调整筛选</td></tr>`}</tbody>
+            <tbody>${rows || `<tr><td colspan="12" class="empty">无匹配数据，请调整筛选</td></tr>`}</tbody>
           </table>
         </div>
       </div>`;
@@ -1243,6 +1486,7 @@
       "task-status": viewTaskStatus,
       "price-trend": viewPriceTrend,
       "category-trend": viewCategoryTrend,
+      "category-summary": viewCategorySummary,
       "detail-data": viewDetailData,
     };
     content.innerHTML = (views[name] || viewOverview)();
@@ -1336,7 +1580,14 @@
         alert("请先创建告警规则");
         return;
       }
-      const candidates = d.markets.filter((m) => m.platform_id === rule.platform_id);
+      const seriesMarkets = [...new Set(
+        (d.series || [])
+          .filter((s) => s.platform_id === rule.platform_id && s.product_id === rule.product_id)
+          .map((s) => s.market_id)
+      )];
+      const candidates = seriesMarkets.length
+        ? d.markets.filter((m) => seriesMarkets.includes(m.id))
+        : d.markets.filter((m) => m.platform_id === rule.platform_id);
       const market = candidates[Math.floor(Math.random() * candidates.length)] || d.markets[0];
       const value = Math.round(rule.threshold * (1.1 + Math.random() * 0.5) * 10) / 10;
       if (!d.alertEvents) d.alertEvents = [];
@@ -1477,6 +1728,10 @@
       sessionStorage.setItem("demo-detail-shop", t.value);
       render();
     }
+    if (t.id === "filter-detail-alert") {
+      sessionStorage.setItem("demo-detail-alert", t.value);
+      render();
+    }
     if (t.id === "filter-detail-relative") {
       if (t.value === "-") {
         sessionStorage.setItem("demo-detail-relative", "-");
@@ -1493,6 +1748,35 @@
     if (t.id === "filter-detail-to") {
       sessionStorage.setItem("demo-detail-to", t.value);
       sessionStorage.setItem("demo-detail-relative", "-");
+      render();
+    }
+    if (t.id === "filter-summary-category") {
+      sessionStorage.setItem("demo-summary-category", t.value);
+      render();
+    }
+    if (t.id === "filter-summary-platform") {
+      sessionStorage.setItem("demo-summary-platform", t.value);
+      render();
+    }
+    if (t.id === "filter-summary-relative") {
+      if (t.value === "-") {
+        sessionStorage.setItem("demo-summary-relative", "-");
+      } else {
+        const range = rangeFromRelative(t.value);
+        sessionStorage.setItem("demo-summary-relative", t.value);
+        sessionStorage.setItem("demo-summary-from", range.from);
+        sessionStorage.setItem("demo-summary-to", range.to);
+      }
+      render();
+    }
+    if (t.id === "filter-summary-from") {
+      sessionStorage.setItem("demo-summary-from", t.value);
+      sessionStorage.setItem("demo-summary-relative", "-");
+      render();
+    }
+    if (t.id === "filter-summary-to") {
+      sessionStorage.setItem("demo-summary-to", t.value);
+      sessionStorage.setItem("demo-summary-relative", "-");
       render();
     }
   }

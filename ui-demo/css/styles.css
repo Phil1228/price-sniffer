@@ -488,6 +488,20 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
+.badge-alert-firing {
+  background: color-mix(in srgb, var(--danger) 18%, white);
+  color: var(--danger);
+}
+
+.badge-alert-rule {
+  background: color-mix(in srgb, var(--warn) 18%, white);
+  color: var(--warn);
+}
+
+.series-table .series-row.has-alert {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
 .expand-meta a {
   color: var(--accent);
   text-decoration: underline;

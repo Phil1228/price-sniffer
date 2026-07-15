@@ -60,9 +60,10 @@
       running: "badge-running",
       pending: "badge-pending",
       firing: "badge-failed",
-      acknowledged: "badge-pending",
+      handled: "badge-success",
+      acknowledged: "badge-success",
       resolved: "badge-success",
-      silenced: "badge-off",
+      silenced: "badge-success",
     };
     const labels = {
       success: "成功",
@@ -70,9 +71,10 @@
       running: "运行中",
       pending: "待运行",
       firing: "告警中",
-      acknowledged: "已确认",
-      resolved: "已恢复",
-      silenced: "静默中",
+      handled: "已处理",
+      acknowledged: "已处理",
+      resolved: "已处理",
+      silenced: "已处理",
     };
     return `<span class="badge ${map[status] || ""}">${labels[status] || esc(status)}</span>`;
   }
@@ -534,32 +536,45 @@
   function viewAlertPanel() {
     const d = Store.get();
     const events = d.alertEvents || [];
-    const counts = { firing: 0, acknowledged: 0, resolved: 0, silenced: 0 };
-    events.forEach((e) => {
-      counts[e.status] = (counts[e.status] || 0) + 1;
-    });
+    const firingCount = events.filter((e) => e.status === "firing").length;
+    const handledCount = events.filter((e) => e.status !== "firing").length;
     const statusFilter = sessionStorage.getItem("demo-alert-status") || "";
     const productFilter = sessionStorage.getItem("demo-alert-product") || "";
+    const platformFilter = sessionStorage.getItem("demo-alert-platform") || "";
+    const marketFilter = sessionStorage.getItem("demo-alert-market") || "";
+    const markets = platformFilter
+      ? d.markets.filter((m) => m.platform_id === platformFilter)
+      : d.markets;
+
     let list = events.slice();
-    if (statusFilter) list = list.filter((e) => e.status === statusFilter);
+    if (statusFilter === "firing") list = list.filter((e) => e.status === "firing");
+    if (statusFilter === "handled") list = list.filter((e) => e.status !== "firing");
     if (productFilter) list = list.filter((e) => e.product_id === productFilter);
+    if (platformFilter) list = list.filter((e) => e.platform_id === platformFilter);
+    if (marketFilter) list = list.filter((e) => e.market_id === marketFilter);
 
     const rows = list
       .map(
         (e) => `
       <tr>
-        <td>${statusBadge(e.status)}</td>
+        <td>${statusBadge(e.status === "firing" ? "firing" : "handled")}</td>
         <td>${esc(e.rule_name)}</td>
         <td>${esc(Store.productName(e.product_id))}</td>
-        <td>${esc(Store.platformName(e.platform_id))}${e.market_id ? " / " + esc(Store.marketName(e.market_id)) : ""}</td>
+        <td>${esc(Store.platformName(e.platform_id))}</td>
+        <td>${e.market_id ? esc(Store.marketName(e.market_id)) : '<span class="muted">—</span>'}</td>
+        <td>${
+          e.shop_name || e.shop_id
+            ? e.listing_url
+              ? `<a class="shop-link" href="${esc(e.listing_url)}" target="_blank" rel="noopener">${esc(e.shop_name || e.shop_id)}</a>`
+              : esc(e.shop_name || e.shop_id)
+            : '<span class="muted">—</span>'
+        }</td>
         <td>${esc(METRIC_LABELS[e.metric] || e.metric)}</td>
         <td><code>${esc(e.observed_value)}</code> / <code>${esc(e.threshold)}</code></td>
         <td class="muted">${esc((e.fired_at || "").slice(0, 16).replace("T", " "))}</td>
         <td class="muted">${esc(e.message || "")}</td>
         <td class="row-actions">
-          ${e.status === "firing" ? `<button type="button" class="btn btn-sm btn-secondary" data-act="ack-alert" data-id="${esc(e.id)}">确认</button>` : ""}
-          ${e.status === "firing" || e.status === "acknowledged" ? `<button type="button" class="btn btn-sm btn-primary" data-act="resolve-alert" data-id="${esc(e.id)}">恢复</button>` : ""}
-          ${e.status === "firing" ? `<button type="button" class="btn btn-sm btn-secondary" data-act="silence-alert" data-id="${esc(e.id)}">静默</button>` : ""}
+          ${e.status === "firing" ? `<button type="button" class="btn btn-sm btn-primary" data-act="handle-alert" data-id="${esc(e.id)}">已处理</button>` : ""}
           <button type="button" class="btn btn-sm btn-danger" data-act="del-alert-event" data-id="${esc(e.id)}">删除</button>
         </td>
       </tr>`
@@ -568,10 +583,9 @@
 
     return `
       <div class="stats">
-        <div class="stat"><div class="label">告警中</div><div class="value">${counts.firing || 0}</div></div>
-        <div class="stat"><div class="label">已确认</div><div class="value">${counts.acknowledged || 0}</div></div>
-        <div class="stat"><div class="label">已恢复</div><div class="value">${counts.resolved || 0}</div></div>
-        <div class="stat"><div class="label">静默中</div><div class="value">${counts.silenced || 0}</div></div>
+        <div class="stat"><div class="label">告警中</div><div class="value">${firingCount}</div></div>
+        <div class="stat"><div class="label">已处理</div><div class="value">${handledCount}</div></div>
+        <div class="stat"><div class="label">合计</div><div class="value">${events.length}</div></div>
       </div>
       <div class="panel">
         <div class="panel-header">
@@ -581,16 +595,14 @@
             <a class="btn btn-secondary" href="#/alerts">管理规则</a>
           </div>
         </div>
-        <p class="muted" style="margin-top:0">状态：告警中 → 已确认 / 静默中 → 已恢复（对应产品文档 alert_events）。</p>
+        <p class="muted" style="margin-top:0">状态：告警中 → 已处理。店铺名可点击跳转商品链接。</p>
         <div class="toolbar">
           <div class="field">
             <label>状态</label>
             <select id="filter-alert-status">
               <option value="">全部</option>
               <option value="firing" ${statusFilter === "firing" ? "selected" : ""}>告警中</option>
-              <option value="acknowledged" ${statusFilter === "acknowledged" ? "selected" : ""}>已确认</option>
-              <option value="resolved" ${statusFilter === "resolved" ? "selected" : ""}>已恢复</option>
-              <option value="silenced" ${statusFilter === "silenced" ? "selected" : ""}>静默中</option>
+              <option value="handled" ${statusFilter === "handled" ? "selected" : ""}>已处理</option>
             </select>
           </div>
           <div class="field">
@@ -600,16 +612,30 @@
               ${d.products.map((p) => `<option value="${esc(p.id)}" ${productFilter === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
             </select>
           </div>
+          <div class="field">
+            <label>平台</label>
+            <select id="filter-alert-platform">
+              <option value="">全部平台</option>
+              ${d.platforms.map((p) => `<option value="${esc(p.id)}" ${platformFilter === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>市场</label>
+            <select id="filter-alert-market">
+              <option value="">全部市场</option>
+              ${markets.map((m) => `<option value="${esc(m.id)}" ${marketFilter === m.id ? "selected" : ""}>${esc(Store.platformName(m.platform_id))} / ${esc(m.name)}</option>`).join("")}
+            </select>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>状态</th><th>规则</th><th>产品</th><th>平台 / 市场</th>
+                <th>状态</th><th>规则</th><th>产品</th><th>平台</th><th>市场</th><th>店铺</th>
                 <th>指标</th><th>观测 / 阈值</th><th>触发时间</th><th>说明</th><th>操作</th>
               </tr>
             </thead>
-            <tbody>${rows || `<tr><td colspan="9" class="empty">暂无告警事件</td></tr>`}</tbody>
+            <tbody>${rows || `<tr><td colspan="11" class="empty">暂无告警事件</td></tr>`}</tbody>
           </table>
         </div>
       </div>`;
@@ -1576,10 +1602,10 @@
       render();
       return;
     }
-    if (act === "ack-alert" || act === "resolve-alert" || act === "silence-alert") {
+    if (act === "handle-alert") {
       const evt = (d.alertEvents || []).find((e) => e.id === id);
       if (!evt) return;
-      evt.status = act === "ack-alert" ? "acknowledged" : act === "resolve-alert" ? "resolved" : "silenced";
+      evt.status = "handled";
       evt.updated_at = new Date().toISOString();
       Store.commit();
       render();
@@ -1599,15 +1625,13 @@
         alert("请先创建告警规则");
         return;
       }
-      const seriesMarkets = [...new Set(
-        (d.series || [])
-          .filter((s) => s.platform_id === rule.platform_id && s.product_id === rule.product_id)
-          .map((s) => s.market_id)
-      )];
-      const candidates = seriesMarkets.length
-        ? d.markets.filter((m) => seriesMarkets.includes(m.id))
-        : d.markets.filter((m) => m.platform_id === rule.platform_id);
-      const market = candidates[Math.floor(Math.random() * candidates.length)] || d.markets[0];
+      const seriesMatches = (d.series || []).filter(
+        (s) => s.platform_id === rule.platform_id && s.product_id === rule.product_id
+      );
+      const s =
+        seriesMatches[Math.floor(Math.random() * seriesMatches.length)] ||
+        (d.series || [])[Math.floor(Math.random() * (d.series || []).length)];
+      const market = d.markets.find((m) => m.id === s?.market_id) || d.markets[0];
       const value = Math.round(rule.threshold * (1.1 + Math.random() * 0.5) * 10) / 10;
       if (!d.alertEvents) d.alertEvents = [];
       d.alertEvents.unshift({
@@ -1616,7 +1640,10 @@
         rule_name: rule.name,
         product_id: rule.product_id,
         platform_id: rule.platform_id,
-        market_id: market?.id || "",
+        market_id: s?.market_id || market?.id || "",
+        shop_id: s?.shop_id || "",
+        shop_name: s?.shop_name || "",
+        listing_url: s?.listing_url || "",
         metric: rule.metric,
         observed_value: value,
         threshold: rule.threshold,
@@ -1713,6 +1740,15 @@
     }
     if (t.id === "filter-alert-product") {
       sessionStorage.setItem("demo-alert-product", t.value);
+      render();
+    }
+    if (t.id === "filter-alert-platform") {
+      sessionStorage.setItem("demo-alert-platform", t.value);
+      sessionStorage.setItem("demo-alert-market", "");
+      render();
+    }
+    if (t.id === "filter-alert-market") {
+      sessionStorage.setItem("demo-alert-market", t.value);
       render();
     }
     if (t.id === "filter-chart-product") {

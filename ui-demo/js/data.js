@@ -2,7 +2,7 @@
  * Demo data store — simulates SQLite meta-config + TDengine series in localStorage.
  */
 const Store = (() => {
-  const KEY = "price-sniffer-ui-demo-v7";
+  const KEY = "price-sniffer-ui-demo-v8";
 
   const PLATFORMS_SEED = [
     { id: "pdd", name: "拼多多", enabled: true },
@@ -204,66 +204,66 @@ const Store = (() => {
     revenue: "销售额",
   };
 
+  function pickSeriesForAlert(series, productId, platformId, marketId) {
+    const list = series || [];
+    let candidates = list.filter(
+      (s) =>
+        (!productId || s.product_id === productId) &&
+        (!platformId || s.platform_id === platformId) &&
+        (!marketId || s.market_id === marketId)
+    );
+    if (!candidates.length) {
+      candidates = list.filter(
+        (s) => (!productId || s.product_id === productId) && (!platformId || s.platform_id === platformId)
+      );
+    }
+    if (!candidates.length) candidates = list;
+    return candidates.length ? pick(candidates) : null;
+  }
+
   function buildAlertEvents(alertRules, markets, series) {
-    const otherStatuses = ["acknowledged", "resolved", "silenced"];
     const events = [];
     const enabledRules = alertRules.filter((r) => r.enabled);
     const pool = enabledRules.length ? enabledRules : alertRules;
-    const focusMarketIds = new Set(
-      (series || [])
-        .map((s) => s.market_id)
-        .filter(Boolean)
-    );
+    const focusMarketIds = new Set((series || []).map((s) => s.market_id).filter(Boolean));
     const focusMarkets = markets.filter((m) => focusMarketIds.has(m.id));
     const marketPool = focusMarkets.length ? focusMarkets : markets;
 
-    // Guarantee several 「告警中」 events bound to series markets
-    const firingCount = Math.min(6, Math.max(3, pool.length));
-    for (let i = 0; i < firingCount; i++) {
-      const rule = pool[i % pool.length];
+    const makeEvent = (rule, status, hoursBack) => {
       const candidates = marketPool.filter((m) => m.platform_id === rule.platform_id);
       const market = pick(candidates.length ? candidates : marketPool);
+      const shopSeries = pickSeriesForAlert(series, rule.product_id, rule.platform_id, market?.id);
       const value = Math.round(rand(rule.threshold * 1.05, rule.threshold * 1.8) * 10) / 10;
-      const firedAt = hoursAgo(i * 3 + Math.floor(Math.random() * 2));
-      events.push({
+      const firedAt = hoursAgo(hoursBack);
+      return {
         id: uid("evt"),
         rule_id: rule.id,
         rule_name: rule.name,
         product_id: rule.product_id,
         platform_id: rule.platform_id,
-        market_id: market?.id || "",
-        metric: rule.metric,
-        observed_value: value,
-        threshold: rule.threshold,
-        status: "firing",
-        fired_at: firedAt,
-        updated_at: firedAt,
-        message: `${METRIC_LABEL_SEED[rule.metric] || rule.metric} 观测值 ${value}，阈值 ${rule.threshold}`,
-      });
-    }
-
-    for (let i = 0; i < 10; i++) {
-      const rule = pick(pool);
-      const status = pick(otherStatuses);
-      const firedAt = hoursAgo(8 + i * 5 + Math.floor(Math.random() * 4));
-      const candidates = marketPool.filter((m) => m.platform_id === rule.platform_id);
-      const market = pick(candidates.length ? candidates : marketPool);
-      const value = Math.round(rand(rule.threshold * 0.8, rule.threshold * 1.8) * 10) / 10;
-      events.push({
-        id: uid("evt"),
-        rule_id: rule.id,
-        rule_name: rule.name,
-        product_id: rule.product_id,
-        platform_id: rule.platform_id,
-        market_id: market?.id || "",
+        market_id: shopSeries?.market_id || market?.id || "",
+        shop_id: shopSeries?.shop_id || "",
+        shop_name: shopSeries?.shop_name || "",
+        listing_url: shopSeries?.listing_url || "",
         metric: rule.metric,
         observed_value: value,
         threshold: rule.threshold,
         status,
         fired_at: firedAt,
-        updated_at: new Date(new Date(firedAt).getTime() + rand(10, 120) * 60000).toISOString(),
+        updated_at:
+          status === "firing"
+            ? firedAt
+            : new Date(new Date(firedAt).getTime() + rand(10, 120) * 60000).toISOString(),
         message: `${METRIC_LABEL_SEED[rule.metric] || rule.metric} 观测值 ${value}，阈值 ${rule.threshold}`,
-      });
+      };
+    };
+
+    const firingCount = Math.min(6, Math.max(3, pool.length));
+    for (let i = 0; i < firingCount; i++) {
+      events.push(makeEvent(pool[i % pool.length], "firing", i * 3 + Math.floor(Math.random() * 2)));
+    }
+    for (let i = 0; i < 10; i++) {
+      events.push(makeEvent(pick(pool), "handled", 8 + i * 5 + Math.floor(Math.random() * 4)));
     }
     return events.sort((a, b) => (a.fired_at < b.fired_at ? 1 : -1));
   }
@@ -383,12 +383,18 @@ const Store = (() => {
       data.series = buildSeries(data.products || PRODUCT_SEEDS, data.markets || buildMarkets());
     }
     const firingCount = (data.alertEvents || []).filter((e) => e.status === "firing").length;
-    if (!Array.isArray(data.alertEvents) || firingCount < 2) {
+    const needsShopOnEvents = (data.alertEvents || []).some((e) => !e.shop_name && !e.listing_url);
+    if (!Array.isArray(data.alertEvents) || firingCount < 2 || needsShopOnEvents) {
       data.alertEvents = buildAlertEvents(
         data.alertRules || buildAlertRules(data.products || PRODUCT_SEEDS, data.platforms || PLATFORMS_SEED),
         data.markets || buildMarkets(),
         data.series || []
       );
+    } else {
+      data.alertEvents = data.alertEvents.map((e) => ({
+        ...e,
+        status: e.status === "firing" ? "firing" : e.status === "handled" ? "handled" : "handled",
+      }));
     }
     return data;
   }

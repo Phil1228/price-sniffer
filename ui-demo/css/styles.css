@@ -488,9 +488,13 @@ tbody tr:hover {
   font-size: 0.85rem;
 }
 
-.badge-alert-firing {
-  background: color-mix(in srgb, var(--danger) 18%, white);
-  color: var(--danger);
+.shop-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.shop-link:hover {
+  filter: brightness(0.9);
 }
 
 .badge-alert-rule {

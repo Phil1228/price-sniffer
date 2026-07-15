@@ -498,6 +498,7 @@
         <td>${esc(r.name)}</td>
         <td>${esc(Store.productName(r.product_id))}</td>
         <td>${esc(Store.platformName(r.platform_id))}</td>
+        <td>${r.market_id ? esc(Store.marketName(r.market_id)) : '<span class="muted">全部市场</span>'}</td>
         <td>${esc(METRIC_LABELS[r.metric] || r.metric)}</td>
         <td><code>${esc(OP_LABELS[r.operator] || r.operator)} ${esc(r.threshold)}</code></td>
         <td>${esc(BASELINE_LABELS[r.baseline_mode] || r.baseline_mode)}</td>
@@ -520,11 +521,11 @@
             <button type="button" class="btn btn-primary" data-act="add-alert">新增规则</button>
           </div>
         </div>
-        <p class="muted" style="margin-top:0">规则存于元配置库（Demo 用 localStorage），非 YAML 文件。</p>
+        <p class="muted" style="margin-top:0">规则存于元配置库（Demo 用 localStorage），非 YAML 文件。市场留空表示该平台下全部市场。</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>名称</th><th>产品</th><th>平台</th><th>指标</th><th>条件</th><th>基准</th><th>静默</th><th>状态</th><th>操作</th></tr></thead>
-            <tbody>${rows || `<tr><td colspan="9" class="empty">暂无规则</td></tr>`}</tbody>
+            <thead><tr><th>名称</th><th>产品</th><th>平台</th><th>市场</th><th>指标</th><th>条件</th><th>基准</th><th>静默</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="10" class="empty">暂无规则</td></tr>`}</tbody>
           </table>
         </div>
       </div>`;
@@ -630,6 +631,10 @@
       enabled: true,
       silence_minutes: 60,
     };
+    const marketsFor = (platformId) => d.markets.filter((m) => m.platform_id === platformId);
+    const marketOpts = [["", "全部市场"]].concat(
+      marketsFor(r.platform_id).map((m) => [m.id, `${m.name} (${m.country_code || m.id})`])
+    );
     openModal(
       existing ? "编辑告警规则" : "新增告警规则",
       `
@@ -638,6 +643,7 @@
         ${field("产品", "product_id", r.product_id, "select", { options: d.products.map((p) => [p.id, p.name]) })}
         ${field("平台", "platform_id", r.platform_id, "select", { options: d.platforms.map((p) => [p.id, p.name]) })}
       </div>
+      ${field("市场", "market_id", r.market_id || "", "select", { options: marketOpts })}
       <div class="form-row">
         ${field("指标", "metric", r.metric, "select", { options: Object.entries(METRIC_LABELS) })}
         ${field("运算符", "operator", r.operator, "select", { options: Object.entries(OP_LABELS) })}
@@ -656,7 +662,7 @@
           name: String(data.name).trim(),
           product_id: data.product_id,
           platform_id: data.platform_id,
-          market_id: "",
+          market_id: String(data.market_id || "").trim(),
           shop_id: "",
           metric: data.metric,
           operator: data.operator,
@@ -679,6 +685,19 @@
         return true;
       }
     );
+
+    const platformSelect = $('#modal-form [name="platform_id"]');
+    const marketSelect = $('#modal-form [name="market_id"]');
+    if (platformSelect && marketSelect) {
+      platformSelect.addEventListener("change", () => {
+        const list = marketsFor(platformSelect.value);
+        marketSelect.innerHTML =
+          `<option value="">全部市场</option>` +
+          list
+            .map((m) => `<option value="${esc(m.id)}">${esc(m.name)} (${esc(m.country_code || m.id)})</option>`)
+            .join("");
+      });
+    }
   }
 
   function taskTable(tasks, { actions = true } = {}) {
